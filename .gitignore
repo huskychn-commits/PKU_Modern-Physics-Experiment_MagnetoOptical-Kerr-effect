@@ -5,21 +5,34 @@
 ~$*
 *.tmp
 *.temp
+*.log
 
 # 忽略系统文件
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # 忽略Python缓存文件
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # 忽略IDE配置文件
 .vscode/
 .idea/
 *.swp
 *.swo
+*~
+
+# 忽略Jupyter Notebook检查点
+.ipynb_checkpoints/
 
 # 忽略数据文件（可根据需要调整）
 # *.dat
@@ -33,3 +46,31 @@ __pycache__/
 # *.jpg
 # *.jpeg
 # *.gif
+# *.bmp
+# *.tiff
+
+# 忽略PDF文件（可根据需要调整）
+# *.pdf
+
+# 忽略压缩文件
+*.zip
+*.tar.gz
+*.rar
+
+# 忽略操作系统文件
+ehthumbs.db
+ehthumbs_vista.db
+
+# 忽略Dump文件
+*.dump
+
+# 忽略SQLite数据库文件
+*.db
+*.sqlite3
+
+# 忽略环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local

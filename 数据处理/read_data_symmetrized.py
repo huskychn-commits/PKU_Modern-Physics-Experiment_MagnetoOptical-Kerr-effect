@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+read_data_improved.py - 读取4deg.txt实验数据文件并进行改进处理
+将原始数据和中心对称变换之后的数据平均之后再存储
+"""
+
+import re
+import os
+import numpy as np
+from typing import List, Tuple, Dict, Any
+
+# 添加当前目录到路径，以便导入其他模块
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+def parse_line_data(line_text: str) -> Tuple[List[float], List[float]]:
+    """
+    解析单个<line>部分的数据，提取第一列和第三列
+    
+    参数:
+    line_text (str): 包含<data>标签及其内容的文本
+    
+    返回:
+    tuple: (x_data, y_data) 第一列（磁感应强度）和第三列（角度值）数据
+    """
+    x_data = []
+    y_data = []
+    
+    # 使用正则表达式提取<data>标签后的数据行
+    # 数据行以空格开头，包含数字和可能的负号、小数点
+    data_pattern = r'<data>:(.*?)(?=\n\s*</line>|\n\s*<line>|\Z)'
+    data_match = re.search(data_pattern, line_text, re.DOTALL)
+    
+    if not data_match:
+        return x_data, y_data
+    
+    data_content = data_match.group(1)
+    
+    # 按行分割数据内容
+    lines = data_content.strip().split('\n')
+    
+    for line in lines:
+        # 跳过空行和表头行
+        if not line.strip() or '磁感应强度' in line:
+            continue
+        
+        # 分割行中的数字（可能有多个空格）
+        parts = re.split(r'\s+', line.strip())
+        
+        if len(parts) >= 3:
+            try:
+                # 第一列：磁感应强度(mT)
+                x = float(parts[0])
+                # 第三列：角度值（度）
+                y = float(parts[2])
+                
+                x_data.append(x)
+                y_data.append(y)
+            except (ValueError, IndexError):
+                # 如果转换失败，跳过这一行
+                continue
+    
+    return x_data, y_data
+
+
+def average_with_parity_transform(x_data: List[float], y_data: List[float]) -> Tuple[List[float], List[float]]:
+    """
+    将原始数据和中心对称变换之后的数据平均
+    
+    参数:
+    x_data (list): 原始x数据（磁感应强度）
+    y_data (list): 原始y数据（角度值）
+    
+    返回:
+    tuple: (x_avg, y_avg) 平均后的x和y数据
+    """
+    # 尝试导入find_centre中的parity_transform和find_ycentre函数
+    try:
+        from find_centre import parity_transform, find_ycentre
+        
+        # 计算y中心值
+        y_centre = find_ycentre(y_data)
+        
+        # 进行中心对称变换
+        x_transformed, y_transformed = parity_transform(x_data, y_data, x_c=0, y_c=y_centre)
+        
+        # 将原始数据和变换后的数据平均
+        x_avg = [(x + x_t) / 2 for x, x_t in zip(x_data, x_transformed)]
+        y_avg = [(y + y_t) / 2 for y, y_t in zip(y_data, y_transformed)]
+        
+        print(f"  中心对称变换完成，对称中心: (0, {y_centre:.6f})")
+        print(f"  原始数据范围: x[{min(x_data):.2f}, {max(x_data):.2f}], y[{min(y_data):.6f}, {max(y_data):.6f}]")
+        print(f"  变换数据范围: x[{min(x_transformed):.2f}, {max(x_transformed):.2f}], y[{min(y_transformed):.6f}, {max(y_transformed):.6f}]")
+        print(f"  平均数据范围: x[{min(x_avg):.2f}, {max(x_avg):.2f}], y[{min(y_avg):.6f}, {max(y_avg):.6f}]")
+        
+        return x_avg, y_avg
+        
+    except ImportError as e:
+        print(f"  警告: 无法导入find_centre模块: {e}")
+        print(f"  使用原始数据（未进行平均处理）")
+        return x_data, y_data
+    except Exception as e:
+        print(f"  警告: 中心对称变换失败: {e}")
+        print(f"  使用原始数据（未进行平均处理）")
+        return x_data, y_data
+
+
+def read_4deg_data_improved(filepath: str = None) -> Dict[str, List[List[List[float]]]]:
+    """
+    读取4deg.txt文件，进行改进处理，整理数据为指定格式
+    
+    参数:
+    filepath (str): 文件路径，默认为"20251217/4deg.txt"
+    
+    返回:
+    dict: 格式为{"克尔转角": 克尔转角数据, "克尔椭率": 克尔椭率数据}
+          每个数据是一个长度为5的list，每个元素对应一次实验
+          每次实验的数据格式：[x, y]，其中x是磁感应强度list，y是角度值list
+          数据已经过原始数据和中心对称变换数据的平均处理
+    """
+    if filepath is None:
+        filepath = os.path.join("20251217", "4deg.txt")
+    
+    # 初始化数据结构
+    data_dict = {
+        "克尔转角": [],  # 将包含5个实验的数据
+        "克尔椭率": []   # 将包含5个实验的数据
+    }
+    
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+    except FileNotFoundError:
+        print(f"错误: 文件未找到: {filepath}")
+        return data_dict
+    except Exception as e:
+        print(f"错误: 读取文件时发生错误: {e}")
+        return data_dict
+    
+    # 使用正则表达式分割<line>部分
+    line_pattern = r'<line>(.*?)</line>'
+    line_matches = re.findall(line_pattern, content, re.DOTALL)
+    
+    if not line_matches:
+        print("警告: 未找到<line>数据块")
+        return data_dict
+    
+    print(f"找到 {len(line_matches)} 个数据块")
+    
+    # 按照用户描述，文件包含10个<line>，每2个为一对（克尔转角和克尔椭率）
+    # 总共5对，对应5次实验
+    
+    # 临时存储解析的数据
+    kerr_angle_data = []   # 克尔转角数据
+    kerr_ellipticity_data = []  # 克尔椭率数据
+    
+    for i, line_text in enumerate(line_matches):
+        # 检查这是克尔转角还是克尔椭率数据
+        is_kerr_angle = "克尔转角" in line_text
+        is_kerr_ellipticity = "克尔椭率" in line_text
+        
+        # 解析原始数据
+        x_data, y_data = parse_line_data(line_text)
+        
+        if not x_data or not y_data:
+            print(f"警告: 第 {i+1} 个数据块解析失败或为空")
+            continue
+        
+        print(f"数据块 {i+1}: {'克尔转角' if is_kerr_angle else '克尔椭率'}, "
+              f"数据点数量: {len(x_data)}")
+        
+        # 进行改进处理：将原始数据和中心对称变换之后的数据平均
+        print(f"  进行改进处理（原始数据与中心对称变换数据平均）...")
+        x_avg, y_avg = average_with_parity_transform(x_data, y_data)
+        
+        # 根据数据类型存储平均后的数据
+        if is_kerr_angle:
+            kerr_angle_data.append([x_avg, y_avg])
+        elif is_kerr_ellipticity:
+            kerr_ellipticity_data.append([x_avg, y_avg])
+        else:
+            print(f"警告: 第 {i+1} 个数据块无法识别类型")
+    
+    # 验证数据数量
+    if len(kerr_angle_data) != 5 or len(kerr_ellipticity_data) != 5:
+        print(f"警告: 数据数量不匹配。克尔转角: {len(kerr_angle_data)}, "
+              f"克尔椭率: {len(kerr_ellipticity_data)}。期望各5个。")
+    
+    # 填充字典
+    data_dict["克尔转角"] = kerr_angle_data[:5]  # 只取前5个
+    data_dict["克尔椭率"] = kerr_ellipticity_data[:5]  # 只取前5个
+    
+    return data_dict
+
+
+def print_data_summary(data_dict: Dict[str, List[List[List[float]]]]) -> None:
+    """
+    打印数据摘要信息
+    
+    参数:
+    data_dict: 读取的数据字典
+    """
+    print("\n" + "="*60)
+    print("改进数据摘要（原始数据与中心对称变换数据平均）")
+    print("="*60)
+    
+    for data_type in ["克尔转角", "克尔椭率"]:
+        if data_type in data_dict:
+            data_list = data_dict[data_type]
+            print(f"\n{data_type}数据:")
+            print(f"  实验数量: {len(data_list)}")
+            
+            for i, experiment in enumerate(data_list):
+                if len(experiment) == 2:  # [x, y]
+                    x_data, y_data = experiment
+                    print(f"  实验 {i+1}: {len(x_data)} 个数据点")
+                    if x_data and y_data:
+                        print(f"    磁感应强度范围: [{min(x_data):.2f}, {max(x_data):.2f}] mT")
+                        print(f"    角度范围: [{min(y_data):.6f}, {max(y_data):.6f}] 度")
+                        print(f"    角度均值: {np.mean(y_data):.6f} 度")
+                else:
+                    print(f"  实验 {i+1}: 数据格式错误")
+    
+    print("="*60)
+
+
+def save_data_to_file(data_dict: Dict[str, List[List[List[float]]]], 
+                      output_path: str = "数据处理/experiment_data.json") -> None:
+    """
+    将改进后的数据保存为JSON文件（覆盖原始文件）
+    
+    参数:
+    data_dict: 读取的数据字典
+    output_path: 输出文件路径
+    """
+    import json
+    
+    # 将数据转换为可序列化的格式
+    serializable_dict = {}
+    for key, experiments in data_dict.items():
+        serializable_dict[key] = []
+        for experiment in experiments:
+            if len(experiment) == 2:
+                x_data, y_data = experiment
+                # 转换为列表（numpy数组不可序列化）
+                serializable_dict[key].append([list(x_data), list(y_data)])
+    
+    try:
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(serializable_dict, f, ensure_ascii=False, indent=2)
+        print(f"\n改进数据已保存到: {output_path}（覆盖原始文件）")
+    except Exception as e:
+        print(f"错误: 保存数据时发生错误: {e}")
+
+
+def compare_with_original_data(improved_data_dict: Dict[str, List[List[List[float]]]],
+                              original_filepath: str = "数据处理/experiment_data.json") -> None:
+    """
+    比较改进数据与原始数据的差异
+    
+    参数:
+    improved_data_dict: 改进后的数据字典
+    original_filepath: 原始数据文件路径
+    """
+    import json
+    
+    try:
+        with open(original_filepath, 'r', encoding='utf-8') as f:
+            original_data_dict = json.load(f)
+        
+        print("\n" + "="*60)
+        print("改进数据与原始数据对比")
+        print("="*60)
+        
+        for data_type in ["克尔转角", "克尔椭率"]:
+            if data_type in improved_data_dict and data_type in original_data_dict:
+                improved_data = improved_data_dict[data_type]
+                original_data = original_data_dict[data_type]
+                
+                print(f"\n{data_type}数据对比:")
+                print(f"  改进数据实验数量: {len(improved_data)}")
+                print(f"  原始数据实验数量: {len(original_data)}")
+                
+                if len(improved_data) == len(original_data):
+                    for i in range(min(len(improved_data), 3)):  # 只比较前3个实验
+                        if len(improved_data[i]) == 2 and len(original_data[i]) == 2:
+                            improved_x, improved_y = improved_data[i]
+                            original_x, original_y = original_data[i]
+                            
+                            if len(improved_y) == len(original_y):
+                                # 计算y值的平均差异
+                                y_diff = [abs(imp - orig) for imp, orig in zip(improved_y, original_y)]
+                                avg_diff = np.mean(y_diff)
+                                max_diff = max(y_diff)
+                                
+                                print(f"  实验 {i+1}:")
+                                print(f"    数据点数量: {len(improved_y)}")
+                                print(f"    y值平均差异: {avg_diff:.6f} 度")
+                                print(f"    y值最大差异: {max_diff:.6f} 度")
+                                print(f"    改进y均值: {np.mean(improved_y):.6f} 度")
+                                print(f"    原始y均值: {np.mean(original_y):.6f} 度")
+        
+        print("="*60)
+        
+    except FileNotFoundError:
+        print(f"警告: 原始数据文件未找到: {original_filepath}")
+    except Exception as e:
+        print(f"警告: 比较数据时发生错误: {e}")
+
+
+# 测试代码
+if __name__ == "__main__":
+    print("开始读取4deg.txt数据文件并进行改进处理...")
+    print("="*60)
+    print("改进处理说明:")
+    print("- 对每个实验的原始数据进行中心对称变换")
+    print("- 将原始数据和变换后的数据平均")
+    print("- 存储平均后的数据")
+    print("="*60)
+    
+    # 读取并改进数据
+    improved_data_dict = read_4deg_data_improved()
+    
+    # 打印摘要
+    print_data_summary(improved_data_dict)
+    
+    # 保存改进数据到JSON文件
+    save_data_to_file(improved_data_dict)
+    
+    # 比较改进数据与原始数据
+    compare_with_original_data(improved_data_dict)
+    
+    # 示例：如何访问数据
+    print("\n" + "="*60)
+    print("改进数据访问示例")
+    print("="*60)
+    
+    if improved_data_dict["克尔转角"] and improved_data_dict["克尔椭率"]:
+        print("1. 访问第一个实验的改进克尔转角数据:")
+        first_kerr_angle_exp = improved_data_dict["克尔转角"][0]
+        if len(first_kerr_angle_exp) == 2:
+            x_data, y_data = first_kerr_angle_exp
+            print(f"   磁感应强度数据点数量: {len(x_data)}")
+            print(f"   角度数据点数量: {len(y_data)}")
+            print(f"   前5个磁感应强度值: {x_data[:5]}")
+            print(f"   前5个角度值: {y_data[:5]}")
+        
+        print("\n2. 数据结构验证:")
+        print(f"   克尔转角实验数量: {len(improved_data_dict['克尔转角'])}")
+        print(f"   克尔椭率实验数量: {len(improved_data_dict['克尔椭率'])}")
+        
+        print("\n3. 数据可用于其他分析:")
+        print("   每个实验的数据格式为 [x, y]，其中:")
+        print("   - x: 平均后的磁感应强度列表 (list)")
+        print("   - y: 平均后的角度值列表 (list)")
+        print("   数据已经过原始数据和中心对称变换数据的平均处理")
+    
+    print("="*60)
+    print("改进数据读取完成！")

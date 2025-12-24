@@ -1,0 +1,35 @@
+# 忽略Word文档文件
+*.docx
+
+# 忽略临时文件
+~$*
+*.tmp
+*.temp
+
+# 忽略系统文件
+.DS_Store
+Thumbs.db
+
+# 忽略Python缓存文件
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 忽略IDE配置文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 忽略数据文件（可根据需要调整）
+# *.dat
+# *.txt
+# *.json
+# *.csv
+# *.xlsx
+
+# 忽略图片文件（可根据需要调整）
+# *.png
+# *.jpg
+# *.jpeg
+# *.gif
